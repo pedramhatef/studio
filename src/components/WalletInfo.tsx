@@ -1,11 +1,18 @@
+
 "use client";
 
 import { TonConnectButton, useTonWallet } from "@tonconnect/ui-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Gem } from "lucide-react";
+import { useState, useEffect } from 'react';
 
 export function WalletInfo() {
   const wallet = useTonWallet();
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   return (
     <Card className="w-full max-w-md shadow-lg">
@@ -15,7 +22,7 @@ export function WalletInfo() {
       </CardHeader>
       <CardContent className="flex flex-col items-center space-y-4">
         <TonConnectButton />
-        {wallet && (
+        {isClient && wallet && (
           <div className="text-xs text-muted-foreground break-all">
             Connected: {wallet.account.address.slice(0, 6)}...{wallet.account.address.slice(-4)}
           </div>
