@@ -132,24 +132,32 @@ export default function TapTonPage() {
 
     // ========================================================================
     // START: TON TRANSACTION CUSTOMIZATION AREA
-    // The following transaction object is a PLACEHOLDER.
-    // You NEED to replace `address` and potentially add a `payload` 
-    // to interact with YOUR specific smart contract or "TON manifest".
+    // You need to provide the actual details for your smart contract interaction.
+    // You can tell me these values, and I will update them in the code below.
     // ========================================================================
     const transaction = {
       validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes from now
       messages: [
         {
-          // TODO: Replace with YOUR smart contract address
-          address: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c', // This is a "blackhole" address, effectively burning the sent TON.
-                                                                      // For a real interaction, this should be your contract's address.
-          // TODO: Adjust the amount as needed for your contract interaction (e.g., gas fees, payment)
+          // TODO: Replace with YOUR smart contract address.
+          // Example: 'EQYourContractAddressHereToo'
+          // You can provide this to me.
+          address: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c', // This is a "blackhole" address (effectively burns TON).
+                                                                      // REPLACE THIS with your actual contract address.
+          
+          // TODO: Adjust the amount (in nanoTONs) as needed for your contract.
+          // This might be for gas, or if your contract function requires a payment.
+          // Example: '5000000' for 0.005 TON.
+          // You can provide this to me.
           amount: '1000000', // 0.001 TON (in nanoTONs) - placeholder amount.
           
           // TODO: Add a `payload` if your smart contract interaction requires it.
           // The payload is a base64 encoded string representing the message body (BoC - Bag of Cells).
-          // Example: payload: 'te6ccgEBAQEAAgAAAA==' // Replace with your actual payload
-          // For more information on constructing payloads, refer to TON development documentation.
+          // This is how you call specific functions on your smart contract.
+          // Example: payload: 'te6ccgEBAQEAAgAAAA==' // Replace with your actual payload.
+          // You will need to generate this using TON development tools.
+          // You can provide this to me.
+          // payload: 'YOUR_BASE64_ENCODED_PAYLOAD_HERE', 
         },
       ],
     };
@@ -163,13 +171,7 @@ export default function TapTonPage() {
       const transactionPromise = tonConnectUI.sendTransaction(transaction);
       
       transactionTimer = setTimeout(() => {
-        // Manually reject the promise or handle the timeout scenario
-        // This requires a way to abort the sendTransaction promise if possible,
-        // or at least handle the UI state.
-        // For now, we'll just set pending to false and show a toast.
-        // `sendTransaction` itself doesn't offer an abort controller.
-        // We'll assume if it takes this long, something is wrong with wallet interaction.
-        if (isTransactionPending) { // Check if still pending, as it might have resolved/rejected
+        if (isTransactionPending) { 
             setIsTransactionPending(false);
             toast({
                 title: "Transaction Timed Out",
@@ -182,14 +184,9 @@ export default function TapTonPage() {
         }
       }, TRANSACTION_TIMEOUT_MS);
 
-      await transactionPromise; // Wait for the user to approve/reject in wallet
+      await transactionPromise; 
 
-      if (transactionTimer) clearTimeout(transactionTimer); // Clear the timeout if transaction resolved/rejected
-
-      // If we reach here, the user approved the transaction in their wallet.
-      // NOTE: This does NOT mean the transaction is confirmed on-chain yet.
-      // For a production app, you might want to monitor on-chain confirmation.
-      // For this prototype, user approval is sufficient to activate the in-app booster.
+      if (transactionTimer) clearTimeout(transactionTimer); 
 
       setIsBoosterActive(true);
       const now = Date.now();
@@ -222,14 +219,13 @@ export default function TapTonPage() {
       let toastVariant: "destructive" | "default" = "destructive";
       let hapticType: 'error' | 'warning' = 'error';
 
-      // Check if error is an object and has a message property
       const errorMessageString = (typeof error === 'object' && error !== null && 'message' in error && typeof (error as Error).message === 'string') 
                                  ? (error as Error).message 
-                                 : JSON.stringify(error); // Fallback for other error types
+                                 : JSON.stringify(error); 
       const errorMessageLowerCase = errorMessageString.toLowerCase();
       
       if (errorMessageLowerCase.includes('user rejected') || 
-          (errorMessageString.includes('TonConnectUIError') && errorMessageLowerCase.includes('transaction was not sent'))) {
+          (errorMessageString.includes('tonconnectuierror') && errorMessageLowerCase.includes('transaction was not sent'))) {
         title = "Transaction Cancelled";
         description = "The transaction was not completed by you. Booster not activated.";
         toastVariant = "default"; 
