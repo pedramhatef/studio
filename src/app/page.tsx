@@ -22,6 +22,7 @@ interface FloatingText {
 const BOOSTER_DURATION_MS = 60 * 1000; // 1 minute
 const BOOSTER_COOLDOWN_MS = 60 * 1000; // 1 minute
 const BOOSTER_ACTIVATION_BONUS = 10; // Immediate bonus points for activating booster
+const LOCAL_STORAGE_SCORES_KEY = 'tapTonScores';
 
 export default function TapTonPage() {
   const [score, setScore] = useState(0);
@@ -41,6 +42,45 @@ export default function TapTonPage() {
     }
   }, []);
 
+  const loadScore = useCallback((address: string): number => {
+    if (typeof window === 'undefined') return 0;
+    try {
+      const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
+      if (storedScores) {
+        const scores: Record<string, number> = JSON.parse(storedScores);
+        return scores[address] || 0;
+      }
+    } catch (error) {
+      console.error("Failed to load scores from local storage:", error);
+    }
+    return 0;
+  }, []);
+
+  const saveScore = useCallback((address: string, newScore: number) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
+      let scores: Record<string, number> = {};
+      if (storedScores) {
+        scores = JSON.parse(storedScores);
+      }
+      scores[address] = newScore;
+      localStorage.setItem(LOCAL_STORAGE_SCORES_KEY, JSON.stringify(scores));
+    } catch (error) {
+      console.error("Failed to save score to local storage:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (wallet?.account?.address) {
+      const userAddress = wallet.account.address;
+      const loadedScore = loadScore(userAddress);
+      setScore(loadedScore);
+    } else {
+      setScore(0); // Reset score if wallet disconnects or is not present initially
+    }
+  }, [wallet, loadScore]);
+
   const showFloatingText = useCallback((text: string, x: number, y: number) => {
     const newText: FloatingText = { id: Date.now(), text, x, y, timestamp: Date.now() };
     setFloatingTexts(prev => [...prev, newText]);
@@ -51,7 +91,12 @@ export default function TapTonPage() {
   
   const handleTap = useCallback((event: MouseEvent<HTMLButtonElement>) => {
     const pointsPerTap = isBoosterActive ? 2 : 1;
-    setScore(prevScore => prevScore + pointsPerTap);
+    const newScore = score + pointsPerTap;
+    setScore(newScore);
+
+    if (wallet?.account?.address) {
+      saveScore(wallet.account.address, newScore);
+    }
 
     if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
       window.Telegram.WebApp.HapticFeedback.impactOccurred('medium');
@@ -63,7 +108,7 @@ export default function TapTonPage() {
     
     showFloatingText(`+${pointsPerTap}`, x, y);
 
-  }, [isBoosterActive, showFloatingText]);
+  }, [isBoosterActive, score, showFloatingText, wallet, saveScore]);
 
   const activateBooster = useCallback(async () => {
     if (!wallet) {
@@ -102,7 +147,13 @@ export default function TapTonPage() {
       setBoosterEndTime(now + BOOSTER_DURATION_MS);
       setBoosterCooldownEndTime(now + BOOSTER_DURATION_MS + BOOSTER_COOLDOWN_MS);
       
-      setScore(prevScore => prevScore + BOOSTER_ACTIVATION_BONUS); 
+      setScore(prevScore => {
+        const updatedScore = prevScore + BOOSTER_ACTIVATION_BONUS;
+        if (wallet?.account?.address) {
+          saveScore(wallet.account.address, updatedScore);
+        }
+        return updatedScore;
+      }); 
       showFloatingText(`+${BOOSTER_ACTIVATION_BONUS} Boost!`, window.innerWidth / 2, window.innerHeight / 3);
 
       toast({
@@ -120,8 +171,7 @@ export default function TapTonPage() {
       let toastVariant: "destructive" | "default" = "destructive";
       let hapticType: 'error' | 'warning' = 'error';
 
-      // @ts-expect-error error might have a message property
-      const errorMessageString = typeof error?.message === 'string' ? error.message : '';
+      const errorMessageString = typeof (error as Error)?.message === 'string' ? (error as Error).message : '';
       const errorMessageLowerCase = errorMessageString.toLowerCase();
 
       if (errorMessageLowerCase.includes('user rejected') || 
@@ -153,7 +203,7 @@ export default function TapTonPage() {
     } finally {
       setIsTransactionPending(false);
     }
-  }, [wallet, isBoosterActive, boosterCooldownEndTime, isTransactionPending, tonConnectUI, toast, showFloatingText]);
+  }, [wallet, isBoosterActive, boosterCooldownEndTime, isTransactionPending, tonConnectUI, toast, showFloatingText, saveScore]);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
