@@ -131,33 +131,25 @@ export default function TapTonPage() {
     setIsTransactionPending(true);
 
     // ========================================================================
-    // START: TON TRANSACTION CUSTOMIZATION AREA
-    // You need to provide the actual details for your smart contract interaction.
-    // You can tell me these values, and I will update them in the code below.
+    // START: TON TRANSACTION BASED ON USER PROVIDED DETAILS
+    // The following values are based on the information you provided.
     // ========================================================================
     const transaction = {
       validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes from now
       messages: [
         {
-          // TODO: Replace with YOUR smart contract address.
-          // Example: 'EQYourContractAddressHereToo'
-          // You can provide this to me.
-          address: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c', // This is a "blackhole" address (effectively burns TON).
-                                                                      // REPLACE THIS with your actual contract address.
+          // Smart contract address provided by you.
+          address: 'kQDTFrVTNx99jQhfXYGysnxb2L5xkqvXLiqNOMCJY-w-YiOz',
           
-          // TODO: Adjust the amount (in nanoTONs) as needed for your contract.
-          // This might be for gas, or if your contract function requires a payment.
-          // Example: '5000000' for 0.005 TON.
-          // You can provide this to me.
-          amount: '1000000', // 0.001 TON (in nanoTONs) - placeholder amount.
+          // Amount in nanoTONs provided by you.
+          amount: '50000000', // 0.05 TON
           
-          // TODO: Add a `payload` if your smart contract interaction requires it.
-          // The payload is a base64 encoded string representing the message body (BoC - Bag of Cells).
-          // This is how you call specific functions on your smart contract.
-          // Example: payload: 'te6ccgEBAQEAAgAAAA==' // Replace with your actual payload.
-          // You will need to generate this using TON development tools.
-          // You can provide this to me.
-          // payload: 'YOUR_BASE64_ENCODED_PAYLOAD_HERE', 
+          // Payload derived from the op code 0x00000001 provided by you.
+          // This payload represents a message body containing uint32(1).
+          // If your contract expects a different message structure for op 1 
+          // (e.g., an empty body, or specific arguments after the op_code), 
+          // this payload will need to be adjusted.
+          payload: 'te6ccgEBAQEAAgAAAAEAAAAAAAAAAQ==', 
         },
       ],
     };
