@@ -9,6 +9,7 @@ import { BoosterButton } from "@/components/BoosterButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Coins } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useTonWallet, useTonConnectUI } from "@tonconnect/ui-react";
 
 interface FloatingText {
   id: number;
@@ -28,24 +29,25 @@ export default function TapTonPage() {
   const [boosterEndTime, setBoosterEndTime] = useState<number | null>(null);
   const [boosterCooldownEndTime, setBoosterCooldownEndTime] = useState<number | null>(null);
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
+  const [isTransactionPending, setIsTransactionPending] = useState(false);
+  
   const { toast } = useToast();
+  const wallet = useTonWallet();
+  const [tonConnectUI] = useTonConnectUI();
 
-  // Telegram WebApp SDK interaction
   useEffect(() => {
     if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp) {
       window.Telegram.WebApp.ready();
-      // You can expand viewport if needed:
-      // window.Telegram.WebApp.expand();
     }
   }, []);
 
-  const showFloatingText = (text: string, x: number, y: number) => {
+  const showFloatingText = useCallback((text: string, x: number, y: number) => {
     const newText: FloatingText = { id: Date.now(), text, x, y, timestamp: Date.now() };
     setFloatingTexts(prev => [...prev, newText]);
     setTimeout(() => {
       setFloatingTexts(prev => prev.filter(ft => ft.id !== newText.id));
-    }, 1500); // Remove after 1.5 seconds
-  };
+    }, 1500); 
+  }, []);
   
   const handleTap = useCallback((event: MouseEvent<HTMLButtonElement>) => {
     const pointsPerTap = isBoosterActive ? 2 : 1;
@@ -55,38 +57,87 @@ export default function TapTonPage() {
       window.Telegram.WebApp.HapticFeedback.impactOccurred('medium');
     }
 
-    // Get tap position relative to the viewport for floating text
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - rect.left + Math.random() * 40 - 20; // Click position within button + random offset
-    const y = event.clientY - rect.top - 30 + Math.random() * 20 - 10; // Click position within button - offset to float up + random offset
+    const x = event.clientX - rect.left + Math.random() * 40 - 20; 
+    const y = event.clientY - rect.top - 30 + Math.random() * 20 - 10; 
     
     showFloatingText(`+${pointsPerTap}`, x, y);
 
-  }, [isBoosterActive]);
+  }, [isBoosterActive, showFloatingText]);
 
-  const activateBooster = useCallback(() => {
-    if (isBoosterActive || (boosterCooldownEndTime && boosterCooldownEndTime > Date.now())) {
-      return; // Already active or in cooldown
+  const activateBooster = useCallback(async () => {
+    if (!wallet) {
+      toast({
+        title: "Connect Wallet",
+        description: "Please connect your TON wallet to activate the booster.",
+        variant: "destructive",
+      });
+      if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+        window.Telegram.WebApp.HapticFeedback.notificationOccurred('warning');
+      }
+      return;
     }
-    setIsBoosterActive(true);
-    const now = Date.now();
-    setBoosterEndTime(now + BOOSTER_DURATION_MS);
-    setBoosterCooldownEndTime(now + BOOSTER_DURATION_MS + BOOSTER_COOLDOWN_MS);
-    
-    setScore(prevScore => prevScore + BOOSTER_ACTIVATION_BONUS); // Add bonus points
-    showFloatingText(`+${BOOSTER_ACTIVATION_BONUS} Boost!`, window.innerWidth / 2, window.innerHeight / 3);
 
-
-    toast({
-      title: "Booster Activated!",
-      description: `+${BOOSTER_ACTIVATION_BONUS} bonus! You now earn 2x points for 1 minute.`,
-      variant: "default", 
-    });
-
-    if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
-      window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+    if (isBoosterActive || (boosterCooldownEndTime && boosterCooldownEndTime > Date.now()) || isTransactionPending) {
+      return; 
     }
-  }, [isBoosterActive, boosterCooldownEndTime, toast]);
+
+    setIsTransactionPending(true);
+
+    const transaction = {
+      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes
+      messages: [
+        {
+          address: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c', // Known "blackhole" address
+          amount: '1000000', // 0.001 TON (in nanoTONs)
+        },
+      ],
+    };
+
+    try {
+      await tonConnectUI.sendTransaction(transaction);
+
+      setIsBoosterActive(true);
+      const now = Date.now();
+      setBoosterEndTime(now + BOOSTER_DURATION_MS);
+      setBoosterCooldownEndTime(now + BOOSTER_DURATION_MS + BOOSTER_COOLDOWN_MS);
+      
+      setScore(prevScore => prevScore + BOOSTER_ACTIVATION_BONUS); 
+      showFloatingText(`+${BOOSTER_ACTIVATION_BONUS} Boost!`, window.innerWidth / 2, window.innerHeight / 3);
+
+      toast({
+        title: "Booster Activated!",
+        description: `+${BOOSTER_ACTIVATION_BONUS} bonus! Transaction sent. You now earn 2x points for 1 minute.`,
+        variant: "default", 
+      });
+
+      if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+        window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+      }
+    } catch (error) {
+      console.error("Transaction error:", error);
+      let description = "Booster could not be activated.";
+      // @ts-expect-error error may not be of type Error, but could have a message
+      if (error && typeof error.message === 'string' && error.message.toLowerCase().includes('user rejected')) {
+        description = "Transaction rejected by user.";
+      // @ts-expect-error error may not be of type Error
+      } else if (error && typeof error.message === 'string') {
+        // @ts-expect-error error may not be of type Error
+        description = `Transaction failed: ${error.message}`;
+      }
+      
+      toast({
+        title: "Transaction Failed",
+        description: description,
+        variant: "destructive",
+      });
+      if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+        window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
+      }
+    } finally {
+      setIsTransactionPending(false);
+    }
+  }, [wallet, isBoosterActive, boosterCooldownEndTime, isTransactionPending, tonConnectUI, toast, showFloatingText]);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -143,6 +194,7 @@ export default function TapTonPage() {
         onActivateBooster={activateBooster} 
         boosterEndTime={boosterEndTime}
         boosterCooldownEndTime={boosterCooldownEndTime}
+        isTransactionPending={isTransactionPending}
       />
 
       <footer className="text-xs text-muted-foreground mt-auto pt-4">
