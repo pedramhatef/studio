@@ -1,5 +1,5 @@
 {
-  "url": "YOUR_DEPLOYED_APP_URL",
+  "url": "https://studio-zeta-five.vercel.app/",
   "name": "TapTon Rewards",
-  "iconUrl": "YOUR_DEPLOYED_APP_URL/icon.png"
+  "iconUrl": "https://studio-zeta-five.vercel.app/icon.png"
 }
