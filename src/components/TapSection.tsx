@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { MouseEvent } from 'react';
@@ -34,7 +35,7 @@ export function TapSection({ onTap, disabled, isBoosterActive }: TapButtonProps)
         </div>
       </Button>
       {isBoosterActive && (
-        <p className="text-accent font-semibold animate-pulse">2X POINTS ACTIVE!</p>
+        <p className="text-accent font-semibold animate-pulse">100X POINTS ACTIVE!</p>
       )}
     </div>
   );

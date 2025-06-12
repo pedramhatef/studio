@@ -90,7 +90,7 @@ export default function TapTonPage() {
   }, []);
   
   const handleTap = useCallback((event: MouseEvent<HTMLButtonElement>) => {
-    const pointsPerTap = isBoosterActive ? 2 : 1;
+    const pointsPerTap = isBoosterActive ? 100 : 1;
     const newScore = score + pointsPerTap;
     setScore(newScore);
 
@@ -158,7 +158,7 @@ export default function TapTonPage() {
 
       toast({
         title: "Booster Activated!",
-        description: `+${BOOSTER_ACTIVATION_BONUS} bonus! Transaction sent. You now earn 2x points for 1 minute.`,
+        description: `+${BOOSTER_ACTIVATION_BONUS} bonus! Transaction sent. You now earn 100x points for 1 minute.`,
         variant: "default", 
       });
 
@@ -213,7 +213,7 @@ export default function TapTonPage() {
         setBoosterEndTime(null);
         toast({
           title: "Booster Expired",
-          description: "Your 2x points boost has ended.",
+          description: "Your 100x points boost has ended.",
         });
       }, boosterEndTime - Date.now());
     }

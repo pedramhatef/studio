@@ -31,7 +31,7 @@ export function BoosterButton({ onActivateBooster, boosterEndTime, boosterCooldo
     }
   };
   
-  let buttonText = "Activate 2x Boost (1 min)";
+  let buttonText = "Activate 100x Boost (1 min)";
   let isDisabled = false;
   let ButtonIcon = Zap;
 
