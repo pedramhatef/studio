@@ -1,7 +1,7 @@
 {
-  "url": "https://!!!REPLACE-THIS-WITH-YOUR-ACTUAL-VERCEL-APP-URL!!!.vercel.app",
+  "url": "https://studio-zeta-five.vercel.app/",
   "name": "TapTon Rewards",
-  "iconUrl": "/icon.png",
-  "termsOfUseUrl": "https://!!!REPLACE-THIS-WITH-YOUR-ACTUAL-VERCEL-APP-URL!!!.vercel.app/terms.html",
-  "privacyPolicyUrl": "https://!!!REPLACE-THIS-WITH-YOUR-ACTUAL-VERCEL-APP-URL!!!.vercel.app/privacy.html"
+  "iconUrl": "https://studio-zeta-five.vercel.app/icon.png",
+  "termsOfUseUrl": "https://studio-zeta-five.vercel.app/terms.html",
+  "privacyPolicyUrl": "https://studio-zeta-five.vercel.app/privacy.html"
 }
