@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { MouseEvent } from 'react';
@@ -19,6 +20,7 @@ interface FloatingText {
 
 const BOOSTER_DURATION_MS = 60 * 1000; // 1 minute
 const BOOSTER_COOLDOWN_MS = 60 * 1000; // 1 minute
+const BOOSTER_ACTIVATION_BONUS = 10; // Immediate bonus points for activating booster
 
 export default function TapTonPage() {
   const [score, setScore] = useState(0);
@@ -71,9 +73,13 @@ export default function TapTonPage() {
     setBoosterEndTime(now + BOOSTER_DURATION_MS);
     setBoosterCooldownEndTime(now + BOOSTER_DURATION_MS + BOOSTER_COOLDOWN_MS);
     
+    setScore(prevScore => prevScore + BOOSTER_ACTIVATION_BONUS); // Add bonus points
+    showFloatingText(`+${BOOSTER_ACTIVATION_BONUS} Boost!`, window.innerWidth / 2, window.innerHeight / 3);
+
+
     toast({
       title: "Booster Activated!",
-      description: "You earn 2x points for 1 minute.",
+      description: `+${BOOSTER_ACTIVATION_BONUS} bonus! You now earn 2x points for 1 minute.`,
       variant: "default", 
     });
 
