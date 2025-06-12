@@ -44,49 +44,66 @@ export default function TapTonPage() {
   }, []);
 
   const loadScore = useCallback(async (address: string): Promise<number> => {
-    // Try Telegram CloudStorage first if available
+    // Attempt 1: Telegram CloudStorage
     if (typeof window !== 'undefined' && window.Telegram?.WebApp?.CloudStorage && window.Telegram?.WebApp?.initDataUnsafe?.user) {
       try {
-        return await new Promise<number>((resolve, reject) => {
+        const cloudValue = await new Promise<string | null | undefined>((resolve) => {
           window.Telegram.WebApp.CloudStorage.getItem(`score_${address}`, (error, value) => {
             if (error) {
-              console.error("Telegram CloudStorage.getItem error:", error);
-              // Don't reject, let it fall through to localStorage
-              resolve(-1); // Special value to indicate fallback
+              console.warn(`Telegram CloudStorage.getItem error for address ${address} (will try localStorage):`, error);
+              resolve(null); // Signal to try localStorage by resolving with null
               return;
             }
-            if (value === null || typeof value === 'undefined') {
-                 resolve(0); // No score found in cloud, treat as 0
-            } else {
-                 resolve(parseInt(value, 10) || 0);
-            }
+            resolve(value); // value can be string, null, or undefined
           });
         });
-      } catch (cloudError) {
-        console.error("Exception trying Telegram CloudStorage.getItem:", cloudError);
-        // Fall through to localStorage if CloudStorage access itself fails
+
+        // Check if cloudValue is a non-empty string that can be parsed to a number
+        if (cloudValue !== null && typeof cloudValue !== 'undefined' && cloudValue.trim() !== "") {
+          const parsedScore = parseInt(cloudValue, 10);
+          if (!isNaN(parsedScore)) {
+            // console.log(`Score ${parsedScore} loaded from CloudStorage for ${address}`);
+            return parsedScore;
+          } else {
+            console.warn(`CloudStorage for ${address} contained non-integer value: "${cloudValue}". Treating as no score in cloud.`);
+          }
+        }
+        // If cloudValue is null, undefined, empty, or non-integer, it means no valid score in cloud. Fall through to localStorage.
+        // console.log(`No valid score in CloudStorage for ${address} or CloudStorage returned error/empty, trying localStorage.`);
+      } catch (e) {
+        console.error(`Exception during CloudStorage.getItem access for ${address} (will try localStorage):`, e);
+        // Fall through to localStorage
       }
+    } else {
+      // console.log("Telegram CloudStorage not available, trying localStorage.");
     }
-  
-    // Fallback to localStorage
+
+    // Attempt 2: localStorage (if CloudStorage didn't return a score, had an error, or wasn't available)
     if (typeof window !== 'undefined') {
       try {
         const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
         if (storedScores) {
           const scores: Record<string, number> = JSON.parse(storedScores);
-          return scores[address] || 0;
+          const localScore = scores[address];
+          if (typeof localScore === 'number') {
+            // console.log(`Score ${localScore} loaded from localStorage for ${address}`);
+            return localScore;
+          }
         }
       } catch (localStorageError) {
-        console.error("Failed to load score from local storage:", localStorageError);
+        console.error(`Failed to load score from local storage for ${address}:`, localStorageError);
       }
     }
-    return 0; // Default score if all fails
+    
+    // console.log(`No score found in CloudStorage or localStorage for ${address}, defaulting to 0.`);
+    return 0; // Default score if all fails or nothing found
   }, []);
   
   const saveScore = useCallback((address: string, newScore: number) => {
     // Save to localStorage (acts as a primary or fallback)
     if (typeof window !== 'undefined') {
       try {
+        // console.log(`Saving score ${newScore} to localStorage for ${address}`);
         const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
         let scores: Record<string, number> = {};
         if (storedScores) {
@@ -100,24 +117,25 @@ export default function TapTonPage() {
         scores[address] = newScore;
         localStorage.setItem(LOCAL_STORAGE_SCORES_KEY, JSON.stringify(scores));
       } catch (error) {
-        console.error("Failed to save score to local storage:", error);
+        console.error(`Failed to save score ${newScore} to local storage for ${address}:`, error);
       }
     }
   
     // Also save to Telegram CloudStorage if available
     if (typeof window !== 'undefined' && window.Telegram?.WebApp?.CloudStorage && window.Telegram?.WebApp?.initDataUnsafe?.user) {
       try {
+        // console.log(`Attempting to save score ${newScore} to CloudStorage for ${address}`);
         window.Telegram.WebApp.CloudStorage.setItem(`score_${address}`, newScore.toString(), (error, stored) => {
           if (error) {
-            console.error("Telegram CloudStorage.setItem error:", error);
+            console.error(`Telegram CloudStorage.setItem error for address ${address}, score ${newScore}:`, error);
           } else if (stored) {
-            // console.log("Score saved to Telegram CloudStorage successfully.");
+            // console.log(`Score ${newScore} saved to Telegram CloudStorage successfully for ${address}.`);
           } else {
-            // console.warn("Score not saved to Telegram CloudStorage (stored is false), but no explicit error.");
+            console.warn(`Score ${newScore} NOT saved to Telegram CloudStorage for ${address} (stored callback returned false, no explicit error). This might lead to data loss on other devices/sessions.`);
           }
         });
       } catch (cloudError) {
-        console.error("Exception trying Telegram CloudStorage.setItem:", cloudError);
+        console.error(`Exception trying Telegram CloudStorage.setItem for ${address}, score ${newScore}:`, cloudError);
       }
     }
   }, []);
@@ -127,46 +145,12 @@ export default function TapTonPage() {
       const userAddress = wallet.account.address;
       loadScore(userAddress)
         .then(loadedScore => {
-          // If loadScore resolved with -1, it means cloud failed and we should rely on the localStorage part of loadScore.
-          // The loadScore function now handles the fallback internally.
-          if (loadedScore === -1) { // Cloud failed, try local storage explicitly if logic was different
-             // Current loadScore handles fallback, so this check might be redundant if -1 means "use local value already loaded"
-             // For now, let's assume loadScore's local fallback part will give the correct value.
-             // Re-calling localStorage part of loadScore if -1:
-            if (typeof window !== 'undefined') {
-                try {
-                    const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
-                    if (storedScores) {
-                        const scores: Record<string, number> = JSON.parse(storedScores);
-                        setScore(scores[userAddress] || 0);
-                    } else {
-                        setScore(0);
-                    }
-                } catch (e) { setScore(0); }
-            } else {
-                setScore(0);
-            }
-
-          } else {
-            setScore(loadedScore);
-          }
+          setScore(loadedScore);
         })
         .catch(error => {
-          console.error("Error loading score in useEffect:", error);
-          // Fallback to 0 or try localStorage reading one last time on critical error
-           if (typeof window !== 'undefined') {
-                try {
-                    const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
-                    if (storedScores) {
-                        const scores: Record<string, number> = JSON.parse(storedScores);
-                        setScore(scores[userAddress] || 0);
-                    } else {
-                        setScore(0);
-                    }
-                } catch (e) { setScore(0); }
-            } else {
-                setScore(0);
-            }
+          // This catch should ideally not be hit if loadScore is designed to always resolve.
+          console.error(`Critical error in loadScore promise for ${userAddress}, defaulting to 0:`, error);
+          setScore(0);
         });
     } else {
       setScore(0); // Reset score if wallet disconnects
@@ -225,9 +209,9 @@ export default function TapTonPage() {
       validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes from now
       messages: [
         {
-          address: 'kQDTFrVTNx99jQhfXYGysnxb2L5xkqvXLiqNOMCJY-w-YiOz', // YOUR_SMART_CONTRACT_ADDRESS
-          amount: '50000000', // nanoTONs (e.g., 0.05 TON for booster activation fee)
-          payload: 'te6ccgEBAQEAAgAAAAEAAAAAAAAAAQ==', // base64 encoded payload for your contract's op_code or function call
+          address: 'kQDTFrVTNx99jQhfXYGysnxb2L5xkqvXLiqNOMCJY-w-YiOz', 
+          amount: '50000000', 
+          payload: 'te6ccgEBAQEAAgAAAAEAAAAAAAAAAQ==', 
         },
       ],
     };
@@ -399,5 +383,6 @@ export default function TapTonPage() {
     </div>
   );
 }
+    
 
     
