@@ -25,6 +25,32 @@ const BOOSTER_ACTIVATION_BONUS = 10; // Immediate bonus points for activating bo
 const LOCAL_STORAGE_SCORES_KEY = 'tapTonScores';
 const TRANSACTION_TIMEOUT_MS = 30000; // 30 seconds for transaction timeout
 
+// Helper to get item from Telegram CloudStorage
+const getCloudStorageItem = (key: string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    if (!(typeof window !== 'undefined' && window.Telegram?.WebApp?.CloudStorage && window.Telegram?.WebApp?.initDataUnsafe?.user)) {
+      console.warn(`[Mobile Debug] CloudStorage unavailable when trying to get item: ${key}`);
+      resolve(null);
+      return;
+    }
+    window.Telegram.WebApp.CloudStorage.getItem(key, (error, value) => {
+      if (error) {
+        console.warn(`[Mobile Debug] Telegram CloudStorage.getItem error for key ${key}:`, error);
+        resolve(null); // Resolve null on error to signal fallback
+        return;
+      }
+      if (value === null || typeof value === 'undefined' || value.trim() === "") {
+        console.log(`[Mobile Debug] CloudStorage.getItem for key ${key}: value is null, undefined, or empty ("${value}").`);
+        resolve(null);
+      } else {
+        console.log(`[Mobile Debug] CloudStorage.getItem for key ${key}: value is "${value}".`);
+        resolve(value);
+      }
+    });
+  });
+};
+
+
 export default function TapTonPage() {
   const [score, setScore] = useState(0);
   const [isBoosterActive, setIsBoosterActive] = useState(false);
@@ -39,120 +65,116 @@ export default function TapTonPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp) {
+      console.log("[Mobile Debug] Telegram WebApp ready() called.");
       window.Telegram.WebApp.ready();
     }
   }, []);
 
   const loadScore = useCallback(async (address: string): Promise<number> => {
-    // Attempt 1: Telegram CloudStorage
-    if (typeof window !== 'undefined' && window.Telegram?.WebApp?.CloudStorage && window.Telegram?.WebApp?.initDataUnsafe?.user) {
-      try {
-        const cloudValue = await new Promise<string | null | undefined>((resolve) => {
-          window.Telegram.WebApp.CloudStorage.getItem(`score_${address}`, (error, value) => {
-            if (error) {
-              console.warn(`Telegram CloudStorage.getItem error for address ${address} (will try localStorage):`, error);
-              resolve(null); // Signal to try localStorage by resolving with null
-              return;
-            }
-            resolve(value); // value can be string, null, or undefined
-          });
-        });
+    let scoreToLoad: number | null = null;
+    console.log(`[Mobile Debug] Starting loadScore for address: ${address}`);
 
-        // Check if cloudValue is a non-empty string that can be parsed to a number
-        if (cloudValue !== null && typeof cloudValue !== 'undefined' && cloudValue.trim() !== "") {
-          const parsedScore = parseInt(cloudValue, 10);
-          if (!isNaN(parsedScore)) {
-            // console.log(`Score ${parsedScore} loaded from CloudStorage for ${address}`);
-            return parsedScore;
-          } else {
-            console.warn(`CloudStorage for ${address} contained non-integer value: "${cloudValue}". Treating as no score in cloud.`);
-          }
-        }
-        // If cloudValue is null, undefined, empty, or non-integer, it means no valid score in cloud. Fall through to localStorage.
-        // console.log(`No valid score in CloudStorage for ${address} or CloudStorage returned error/empty, trying localStorage.`);
-      } catch (e) {
-        console.error(`Exception during CloudStorage.getItem access for ${address} (will try localStorage):`, e);
-        // Fall through to localStorage
+    // Attempt 1: Telegram CloudStorage
+    const cloudValue = await getCloudStorageItem(`score_${address}`);
+
+    if (cloudValue !== null) { // cloudValue is a non-empty string here
+      const parsedScore = parseInt(cloudValue, 10);
+      if (!isNaN(parsedScore)) {
+        console.log(`[Mobile Debug] Score ${parsedScore} parsed from CloudStorage for ${address}`);
+        scoreToLoad = parsedScore;
+      } else {
+        console.warn(`[Mobile Debug] CloudStorage for ${address} contained non-integer value: "${cloudValue}". Will try localStorage.`);
       }
     } else {
-      // console.log("Telegram CloudStorage not available, trying localStorage.");
+      console.log(`[Mobile Debug] No valid score from CloudStorage (getItem returned null). Will try localStorage.`);
     }
 
-    // Attempt 2: localStorage (if CloudStorage didn't return a score, had an error, or wasn't available)
-    if (typeof window !== 'undefined') {
+    // Attempt 2: localStorage (if CloudStorage didn't return a score or had an error)
+    if (scoreToLoad === null && typeof window !== 'undefined') {
+      console.log(`[Mobile Debug] Attempting to load from localStorage for ${address}`);
       try {
-        const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
-        if (storedScores) {
-          const scores: Record<string, number> = JSON.parse(storedScores);
-          const localScore = scores[address];
-          if (typeof localScore === 'number') {
-            // console.log(`Score ${localScore} loaded from localStorage for ${address}`);
-            return localScore;
+        const storedScoresString = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
+        if (storedScoresString) {
+          let scoresObj: Record<string, number> = {};
+          try {
+              scoresObj = JSON.parse(storedScoresString);
+          } catch (parseError) {
+              console.error(`[Mobile Debug] Error parsing localStorage scores string for ${address}:`, parseError, "String was:", storedScoresString);
+              // scoresObj remains {}
           }
+          const localScore = scoresObj[address];
+          if (typeof localScore === 'number') {
+            console.log(`[Mobile Debug] Score ${localScore} loaded from localStorage for ${address}`);
+            scoreToLoad = localScore;
+          } else {
+            console.log(`[Mobile Debug] No score for ${address} in parsed localStorage data. Data:`, scoresObj);
+          }
+        } else {
+          console.log(`[Mobile Debug] No '${LOCAL_STORAGE_SCORES_KEY}' item in localStorage.`);
         }
-      } catch (localStorageError) {
-        console.error(`Failed to load score from local storage for ${address}:`, localStorageError);
+      } catch (localStorageReadError) { 
+        console.error(`[Mobile Debug] Failed to execute localStorage.getItem for ${address}:`, localStorageReadError);
       }
     }
     
-    // console.log(`No score found in CloudStorage or localStorage for ${address}, defaulting to 0.`);
-    return 0; // Default score if all fails or nothing found
+    const finalScore = scoreToLoad !== null ? scoreToLoad : 0;
+    console.log(`[Mobile Debug] Final score determined for ${address}: ${finalScore}.`);
+    return finalScore;
   }, []);
   
   const saveScore = useCallback((address: string, newScore: number) => {
+    console.log(`[Mobile Debug] Attempting to save score ${newScore} for address ${address}.`);
     // Save to localStorage (acts as a primary or fallback)
     if (typeof window !== 'undefined') {
       try {
-        // console.log(`Saving score ${newScore} to localStorage for ${address}`);
         const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
         let scores: Record<string, number> = {};
         if (storedScores) {
           try {
             scores = JSON.parse(storedScores);
           } catch (e) {
-            console.error("Error parsing localStorage scores, resetting.", e);
-            scores = {}; // Reset if parsing fails
+            console.error("[Mobile Debug] Error parsing localStorage scores during save, resetting.", e);
+            scores = {}; 
           }
         }
         scores[address] = newScore;
         localStorage.setItem(LOCAL_STORAGE_SCORES_KEY, JSON.stringify(scores));
+        console.log(`[Mobile Debug] Score ${newScore} saved to localStorage for ${address}.`);
       } catch (error) {
-        console.error(`Failed to save score ${newScore} to local storage for ${address}:`, error);
+        console.error(`[Mobile Debug] Failed to save score ${newScore} to local storage for ${address}:`, error);
       }
     }
   
     // Also save to Telegram CloudStorage if available
     if (typeof window !== 'undefined' && window.Telegram?.WebApp?.CloudStorage && window.Telegram?.WebApp?.initDataUnsafe?.user) {
-      try {
-        // console.log(`Attempting to save score ${newScore} to CloudStorage for ${address}`);
-        window.Telegram.WebApp.CloudStorage.setItem(`score_${address}`, newScore.toString(), (error, stored) => {
-          if (error) {
-            console.error(`Telegram CloudStorage.setItem error for address ${address}, score ${newScore}:`, error);
-          } else if (stored) {
-            // console.log(`Score ${newScore} saved to Telegram CloudStorage successfully for ${address}.`);
-          } else {
-            console.warn(`Score ${newScore} NOT saved to Telegram CloudStorage for ${address} (stored callback returned false, no explicit error). This might lead to data loss on other devices/sessions.`);
-          }
-        });
-      } catch (cloudError) {
-        console.error(`Exception trying Telegram CloudStorage.setItem for ${address}, score ${newScore}:`, cloudError);
-      }
+      console.log(`[Mobile Debug] Attempting to save score ${newScore} to CloudStorage for ${address}.`);
+      window.Telegram.WebApp.CloudStorage.setItem(`score_${address}`, newScore.toString(), (error, stored) => {
+        if (error) {
+          console.error(`[Mobile Debug] Telegram CloudStorage.setItem error for address ${address}, score ${newScore}:`, error);
+        } else if (stored) {
+          console.log(`[Mobile Debug] Score ${newScore} saved to Telegram CloudStorage successfully for ${address}. (stored=${stored})`);
+        } else {
+          console.warn(`[Mobile Debug] Score ${newScore} NOT saved to Telegram CloudStorage for ${address} (callback returned stored=${stored}, no explicit error).`);
+        }
+      });
+    } else {
+      console.log(`[Mobile Debug] CloudStorage not available for saving score ${newScore} for ${address}.`);
     }
   }, []);
 
   useEffect(() => {
     if (wallet?.account?.address) {
       const userAddress = wallet.account.address;
+      console.log(`[Mobile Debug] Wallet effect: Wallet connected for ${userAddress}. Loading score.`);
       loadScore(userAddress)
         .then(loadedScore => {
+          console.log(`[Mobile Debug] Wallet effect: loadScore promise resolved for ${userAddress}. Setting score to: ${loadedScore}`);
           setScore(loadedScore);
         })
-        .catch(error => {
-          // This catch should ideally not be hit if loadScore is designed to always resolve.
-          console.error(`Critical error in loadScore promise for ${userAddress}, defaulting to 0:`, error);
-          setScore(0);
-        });
+        // No catch here, loadScore is designed to always resolve.
+        // Errors within loadScore are logged there.
     } else {
+      console.log("[Mobile Debug] Wallet effect: Wallet disconnected or not available. Resetting local score state to 0.");
       setScore(0); // Reset score if wallet disconnects
     }
   }, [wallet, loadScore]);
@@ -206,7 +228,7 @@ export default function TapTonPage() {
     setIsTransactionPending(true);
     
     const transaction = {
-      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes from now
+      validUntil: Math.floor(Date.now() / 1000) + 300, 
       messages: [
         {
           address: 'kQDTFrVTNx99jQhfXYGysnxb2L5xkqvXLiqNOMCJY-w-YiOz', 
@@ -383,6 +405,4 @@ export default function TapTonPage() {
     </div>
   );
 }
-    
-
     
