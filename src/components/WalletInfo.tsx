@@ -1,6 +1,6 @@
 "use client";
 
-import { TonConnectButton, useTonWallet } from "ton-connect-ui-react";
+import { TonConnectButton, useTonWallet } from "@tonconnect/ui-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Gem } from "lucide-react";
 

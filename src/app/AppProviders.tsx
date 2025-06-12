@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from 'react';
-import { TonConnectUIProvider } from 'ton-connect-ui-react';
+import { TonConnectUIProvider } from '@tonconnect/ui-react';
 
 // The manifest URL is for TON Connect, specific to the user's setup.
 const tonConnectManifestUrl = "https://pedramhatef.github.io/my-twa/tonconnect-manifest.json";
