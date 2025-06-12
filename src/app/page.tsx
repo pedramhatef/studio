@@ -23,6 +23,7 @@ const BOOSTER_DURATION_MS = 60 * 1000; // 1 minute
 const BOOSTER_COOLDOWN_MS = 60 * 1000; // 1 minute
 const BOOSTER_ACTIVATION_BONUS = 10; // Immediate bonus points for activating booster
 const LOCAL_STORAGE_SCORES_KEY = 'tapTonScores';
+const TRANSACTION_TIMEOUT_MS = 30000; // 30 seconds for transaction timeout
 
 export default function TapTonPage() {
   const [score, setScore] = useState(0);
@@ -129,18 +130,66 @@ export default function TapTonPage() {
 
     setIsTransactionPending(true);
 
+    // ========================================================================
+    // START: TON TRANSACTION CUSTOMIZATION AREA
+    // The following transaction object is a PLACEHOLDER.
+    // You NEED to replace `address` and potentially add a `payload` 
+    // to interact with YOUR specific smart contract or "TON manifest".
+    // ========================================================================
     const transaction = {
-      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes
+      validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes from now
       messages: [
         {
-          address: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c', // Known "blackhole" address
-          amount: '1000000', // 0.001 TON (in nanoTONs)
+          // TODO: Replace with YOUR smart contract address
+          address: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c', // This is a "blackhole" address, effectively burning the sent TON.
+                                                                      // For a real interaction, this should be your contract's address.
+          // TODO: Adjust the amount as needed for your contract interaction (e.g., gas fees, payment)
+          amount: '1000000', // 0.001 TON (in nanoTONs) - placeholder amount.
+          
+          // TODO: Add a `payload` if your smart contract interaction requires it.
+          // The payload is a base64 encoded string representing the message body (BoC - Bag of Cells).
+          // Example: payload: 'te6ccgEBAQEAAgAAAA==' // Replace with your actual payload
+          // For more information on constructing payloads, refer to TON development documentation.
         },
       ],
     };
+    // ========================================================================
+    // END: TON TRANSACTION CUSTOMIZATION AREA
+    // ========================================================================
+    
+    let transactionTimer: NodeJS.Timeout | null = null;
 
     try {
-      await tonConnectUI.sendTransaction(transaction);
+      const transactionPromise = tonConnectUI.sendTransaction(transaction);
+      
+      transactionTimer = setTimeout(() => {
+        // Manually reject the promise or handle the timeout scenario
+        // This requires a way to abort the sendTransaction promise if possible,
+        // or at least handle the UI state.
+        // For now, we'll just set pending to false and show a toast.
+        // `sendTransaction` itself doesn't offer an abort controller.
+        // We'll assume if it takes this long, something is wrong with wallet interaction.
+        if (isTransactionPending) { // Check if still pending, as it might have resolved/rejected
+            setIsTransactionPending(false);
+            toast({
+                title: "Transaction Timed Out",
+                description: "The wallet did not respond in time. Please try again.",
+                variant: "destructive",
+            });
+            if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+                window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
+            }
+        }
+      }, TRANSACTION_TIMEOUT_MS);
+
+      await transactionPromise; // Wait for the user to approve/reject in wallet
+
+      if (transactionTimer) clearTimeout(transactionTimer); // Clear the timeout if transaction resolved/rejected
+
+      // If we reach here, the user approved the transaction in their wallet.
+      // NOTE: This does NOT mean the transaction is confirmed on-chain yet.
+      // For a production app, you might want to monitor on-chain confirmation.
+      // For this prototype, user approval is sufficient to activate the in-app booster.
 
       setIsBoosterActive(true);
       const now = Date.now();
@@ -154,11 +203,11 @@ export default function TapTonPage() {
         }
         return updatedScore;
       }); 
-      showFloatingText(`+${BOOSTER_ACTIVATION_BONUS} Boost!`, window.innerWidth / 2, window.innerHeight / 3);
+      showFloatingText(`+${BOOSTER_ACTIVATION_BONUS} Boost!`, typeof window !== 'undefined' ? window.innerWidth / 2 : 150 , typeof window !== 'undefined' ? window.innerHeight / 3 : 100);
 
       toast({
         title: "Booster Activated!",
-        description: `+${BOOSTER_ACTIVATION_BONUS} bonus! Transaction sent. You now earn 100x points for 1 minute.`,
+        description: `+${BOOSTER_ACTIVATION_BONUS} bonus! Transaction sent to wallet. You now earn 100x points for 1 minute.`,
         variant: "default", 
       });
 
@@ -166,18 +215,23 @@ export default function TapTonPage() {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       }
     } catch (error) {
+      if (transactionTimer) clearTimeout(transactionTimer);
+      
       let title = "Action Failed";
       let description = "The action could not be completed.";
       let toastVariant: "destructive" | "default" = "destructive";
       let hapticType: 'error' | 'warning' = 'error';
 
-      const errorMessageString = typeof (error as Error)?.message === 'string' ? (error as Error).message : '';
+      // Check if error is an object and has a message property
+      const errorMessageString = (typeof error === 'object' && error !== null && 'message' in error && typeof (error as Error).message === 'string') 
+                                 ? (error as Error).message 
+                                 : JSON.stringify(error); // Fallback for other error types
       const errorMessageLowerCase = errorMessageString.toLowerCase();
-
+      
       if (errorMessageLowerCase.includes('user rejected') || 
           (errorMessageString.includes('TonConnectUIError') && errorMessageLowerCase.includes('transaction was not sent'))) {
         title = "Transaction Cancelled";
-        description = "The transaction was not completed. Booster not activated.";
+        description = "The transaction was not completed by you. Booster not activated.";
         toastVariant = "default"; 
         hapticType = 'warning';
         console.log("Transaction cancelled or not sent by user:", error); 
@@ -201,6 +255,7 @@ export default function TapTonPage() {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred(hapticType);
       }
     } finally {
+      if (transactionTimer) clearTimeout(transactionTimer);
       setIsTransactionPending(false);
     }
   }, [wallet, isBoosterActive, boosterCooldownEndTime, isTransactionPending, tonConnectUI, toast, showFloatingText, saveScore]);
