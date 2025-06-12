@@ -43,42 +43,133 @@ export default function TapTonPage() {
     }
   }, []);
 
-  const loadScore = useCallback((address: string): number => {
-    if (typeof window === 'undefined') return 0;
-    try {
-      const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
-      if (storedScores) {
-        const scores: Record<string, number> = JSON.parse(storedScores);
-        return scores[address] || 0;
+  const loadScore = useCallback(async (address: string): Promise<number> => {
+    // Try Telegram CloudStorage first if available
+    if (typeof window !== 'undefined' && window.Telegram?.WebApp?.CloudStorage && window.Telegram?.WebApp?.initDataUnsafe?.user) {
+      try {
+        return await new Promise<number>((resolve, reject) => {
+          window.Telegram.WebApp.CloudStorage.getItem(`score_${address}`, (error, value) => {
+            if (error) {
+              console.error("Telegram CloudStorage.getItem error:", error);
+              // Don't reject, let it fall through to localStorage
+              resolve(-1); // Special value to indicate fallback
+              return;
+            }
+            if (value === null || typeof value === 'undefined') {
+                 resolve(0); // No score found in cloud, treat as 0
+            } else {
+                 resolve(parseInt(value, 10) || 0);
+            }
+          });
+        });
+      } catch (cloudError) {
+        console.error("Exception trying Telegram CloudStorage.getItem:", cloudError);
+        // Fall through to localStorage if CloudStorage access itself fails
       }
-    } catch (error) {
-      console.error("Failed to load scores from local storage:", error);
     }
-    return 0;
-  }, []);
-
-  const saveScore = useCallback((address: string, newScore: number) => {
-    if (typeof window === 'undefined') return;
-    try {
-      const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
-      let scores: Record<string, number> = {};
-      if (storedScores) {
-        scores = JSON.parse(storedScores);
+  
+    // Fallback to localStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
+        if (storedScores) {
+          const scores: Record<string, number> = JSON.parse(storedScores);
+          return scores[address] || 0;
+        }
+      } catch (localStorageError) {
+        console.error("Failed to load score from local storage:", localStorageError);
       }
-      scores[address] = newScore;
-      localStorage.setItem(LOCAL_STORAGE_SCORES_KEY, JSON.stringify(scores));
-    } catch (error) {
-      console.error("Failed to save score to local storage:", error);
+    }
+    return 0; // Default score if all fails
+  }, []);
+  
+  const saveScore = useCallback((address: string, newScore: number) => {
+    // Save to localStorage (acts as a primary or fallback)
+    if (typeof window !== 'undefined') {
+      try {
+        const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
+        let scores: Record<string, number> = {};
+        if (storedScores) {
+          try {
+            scores = JSON.parse(storedScores);
+          } catch (e) {
+            console.error("Error parsing localStorage scores, resetting.", e);
+            scores = {}; // Reset if parsing fails
+          }
+        }
+        scores[address] = newScore;
+        localStorage.setItem(LOCAL_STORAGE_SCORES_KEY, JSON.stringify(scores));
+      } catch (error) {
+        console.error("Failed to save score to local storage:", error);
+      }
+    }
+  
+    // Also save to Telegram CloudStorage if available
+    if (typeof window !== 'undefined' && window.Telegram?.WebApp?.CloudStorage && window.Telegram?.WebApp?.initDataUnsafe?.user) {
+      try {
+        window.Telegram.WebApp.CloudStorage.setItem(`score_${address}`, newScore.toString(), (error, stored) => {
+          if (error) {
+            console.error("Telegram CloudStorage.setItem error:", error);
+          } else if (stored) {
+            // console.log("Score saved to Telegram CloudStorage successfully.");
+          } else {
+            // console.warn("Score not saved to Telegram CloudStorage (stored is false), but no explicit error.");
+          }
+        });
+      } catch (cloudError) {
+        console.error("Exception trying Telegram CloudStorage.setItem:", cloudError);
+      }
     }
   }, []);
 
   useEffect(() => {
     if (wallet?.account?.address) {
       const userAddress = wallet.account.address;
-      const loadedScore = loadScore(userAddress);
-      setScore(loadedScore);
+      loadScore(userAddress)
+        .then(loadedScore => {
+          // If loadScore resolved with -1, it means cloud failed and we should rely on the localStorage part of loadScore.
+          // The loadScore function now handles the fallback internally.
+          if (loadedScore === -1) { // Cloud failed, try local storage explicitly if logic was different
+             // Current loadScore handles fallback, so this check might be redundant if -1 means "use local value already loaded"
+             // For now, let's assume loadScore's local fallback part will give the correct value.
+             // Re-calling localStorage part of loadScore if -1:
+            if (typeof window !== 'undefined') {
+                try {
+                    const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
+                    if (storedScores) {
+                        const scores: Record<string, number> = JSON.parse(storedScores);
+                        setScore(scores[userAddress] || 0);
+                    } else {
+                        setScore(0);
+                    }
+                } catch (e) { setScore(0); }
+            } else {
+                setScore(0);
+            }
+
+          } else {
+            setScore(loadedScore);
+          }
+        })
+        .catch(error => {
+          console.error("Error loading score in useEffect:", error);
+          // Fallback to 0 or try localStorage reading one last time on critical error
+           if (typeof window !== 'undefined') {
+                try {
+                    const storedScores = localStorage.getItem(LOCAL_STORAGE_SCORES_KEY);
+                    if (storedScores) {
+                        const scores: Record<string, number> = JSON.parse(storedScores);
+                        setScore(scores[userAddress] || 0);
+                    } else {
+                        setScore(0);
+                    }
+                } catch (e) { setScore(0); }
+            } else {
+                setScore(0);
+            }
+        });
     } else {
-      setScore(0); // Reset score if wallet disconnects or is not present initially
+      setScore(0); // Reset score if wallet disconnects
     }
   }, [wallet, loadScore]);
 
@@ -129,34 +220,18 @@ export default function TapTonPage() {
     }
 
     setIsTransactionPending(true);
-
-    // ========================================================================
-    // START: TON TRANSACTION BASED ON USER PROVIDED DETAILS
-    // The following values are based on the information you provided.
-    // ========================================================================
+    
     const transaction = {
       validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes from now
       messages: [
         {
-          // Smart contract address provided by you.
-          address: 'kQDTFrVTNx99jQhfXYGysnxb2L5xkqvXLiqNOMCJY-w-YiOz',
-          
-          // Amount in nanoTONs provided by you.
-          amount: '50000000', // 0.05 TON
-          
-          // Payload derived from the op code 0x00000001 provided by you.
-          // This payload represents a message body containing uint32(1).
-          // If your contract expects a different message structure for op 1 
-          // (e.g., an empty body, or specific arguments after the op_code), 
-          // this payload will need to be adjusted.
-          payload: 'te6ccgEBAQEAAgAAAAEAAAAAAAAAAQ==', 
+          address: 'kQDTFrVTNx99jQhfXYGysnxb2L5xkqvXLiqNOMCJY-w-YiOz', // YOUR_SMART_CONTRACT_ADDRESS
+          amount: '50000000', // nanoTONs (e.g., 0.05 TON for booster activation fee)
+          payload: 'te6ccgEBAQEAAgAAAAEAAAAAAAAAAQ==', // base64 encoded payload for your contract's op_code or function call
         },
       ],
     };
-    // ========================================================================
-    // END: TON TRANSACTION CUSTOMIZATION AREA
-    // ========================================================================
-    
+        
     let transactionTimer: NodeJS.Timeout | null = null;
 
     try {
@@ -325,3 +400,4 @@ export default function TapTonPage() {
   );
 }
 
+    
