@@ -115,24 +115,40 @@ export default function TapTonPage() {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       }
     } catch (error) {
-      console.error("Transaction error:", error);
-      let description = "Booster could not be activated.";
-      // @ts-expect-error error may not be of type Error, but could have a message
-      if (error && typeof error.message === 'string' && error.message.toLowerCase().includes('user rejected')) {
-        description = "Transaction rejected by user.";
-      // @ts-expect-error error may not be of type Error
-      } else if (error && typeof error.message === 'string') {
-        // @ts-expect-error error may not be of type Error
-        description = `Transaction failed: ${error.message}`;
+      let title = "Action Failed";
+      let description = "The action could not be completed.";
+      let toastVariant: "destructive" | "default" = "destructive";
+      let hapticType: 'error' | 'warning' = 'error';
+
+      // @ts-expect-error error might have a message property
+      const errorMessageString = typeof error?.message === 'string' ? error.message : '';
+      const errorMessageLowerCase = errorMessageString.toLowerCase();
+
+      if (errorMessageLowerCase.includes('user rejected') || 
+          (errorMessageString.includes('TonConnectUIError') && errorMessageLowerCase.includes('transaction was not sent'))) {
+        title = "Transaction Cancelled";
+        description = "The transaction was not completed. Booster not activated.";
+        toastVariant = "default"; 
+        hapticType = 'warning';
+        console.log("Transaction cancelled or not sent by user:", error); 
+      } else if (errorMessageString) {
+        title = "Transaction Error";
+        description = `An error occurred: ${errorMessageString}. Booster not activated.`;
+        console.error("Transaction processing error:", error); 
+      } else {
+        title = "Unexpected Error";
+        description = "An unexpected error occurred. Booster not activated.";
+        console.error("Unknown transaction error:", error);
       }
       
       toast({
-        title: "Transaction Failed",
+        title: title,
         description: description,
-        variant: "destructive",
+        variant: toastVariant,
       });
+
       if (typeof window !== 'undefined' && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
-        window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
+        window.Telegram.WebApp.HapticFeedback.notificationOccurred(hapticType);
       }
     } finally {
       setIsTransactionPending(false);
@@ -215,3 +231,4 @@ export default function TapTonPage() {
     </div>
   );
 }
+
